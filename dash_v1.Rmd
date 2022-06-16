@@ -5,65 +5,47 @@ output:
   flexdashboard::flex_dashboard:
     theme: paper
     favicon: img/ios7-location-outline.png
-    source_code: embed
+runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
-# prep workspace
-#pop <- read.csv("data/pop.csv")
 library(dplyr)  # tidy data manipulation
 library(leaflet)  # interative mapping
 library(DT)  # interactive tables
 library(sf) # Geospatial processing library
 library(spData) # Geospatial datasets
-data(us_states)
+
+# observe({
+#   mapFiltered()
+#   leafletProxy("map", data = us_states) %>%
+#   addProviderTiles("CartoDB.Positron") %>% 
+#   clearShapes() %>% 
+#   #clearControls() %>% 
+#   addPolygons(data = us_states, fillColor = 'red', fillOpacity = 0.7, 
+#             color = "white", weight = 2) 
+# })
+
+observe({
+  mapFiltered()
+  renderDataTable(mapFiltered())
+})
+  
 ```
 
 Column {data-width=400}
 -------------------------------------
-
-### About
-
-#### Interactive map
-
-You can:
-
-* tbd
-
-#### Datatable
-
-You can:
-
-* tbd
-
-#### Blurb
-
-Summary tbd.
-
-> bla bla bla
->
-> bla bla bla
->
-> bla bla bla
-
-Disclaimer / license tbd.
-
-#### Tools
-
-[R v3.4.4](https://www.r-project.org/) and [RStudio v1.1.442](https://www.rstudio.com/) were used to build this tool.
-
-The packages used were:
-
-* [Flexdashboard](https://rmarkdown.rstudio.com/flexdashboard/) to create a frame for the content
-* [Leaflet](https://rstudio.github.io/leaflet/) for the interactive map
-* [DT](https://rstudio.github.io/DT/) for the interactive table
-
+```{r}
+radioButtons("category", "Select a variable:",
+            choices = c('total_pop_10','total_pop_15'),
+            selected = "total_pop_10")
+```
 
 ### Variable Selection
     
-```{r}
-DT::datatable(
-  us_states,
+```{r mytable}
+renderDataTable({
+  DT::datatable(
+  mapFiltered(),
   filter = "top",
   extensions = "Scroller",
   rownames = FALSE,
@@ -71,6 +53,7 @@ DT::datatable(
   class = "compact",
   width = "100%",
   options = list(deferRender = TRUE, scrollY = 300, scroller = TRUE))
+})
 ```
 
 
@@ -81,10 +64,36 @@ Column {data-width=600}
     
 ```{r map}
 
-us_states %>% 
-  leaflet() %>% 
-  addTiles()  %>% 
-  setView( lat=10, lng=0 , zoom=2) %>%
-  addPolygons( )
+mapFiltered  <- reactive({
+  us_states[c("NAME",input$category)]
+})
+
+# renderText({
+#   input$category
+# })
+
+renderLeaflet({
+  if (nrow(mapFiltered()) == 0) {
+    return(NULL)
+  }
+
+  leaflet(mapFiltered()) %>%
+    addTiles() %>%
+    setView(lng = 0, lat = 30, zoom = 2) %>%
+    addPolygons(
+      fillColor = sample(c("red","blue","green")),
+      color = "white",
+      fillOpacity = 0.7,
+      #label = ~labels,
+      highlight = highlightOptions(
+        color = "black",
+        bringToFront = TRUE
+      )
+    ) #%>%
+    #leaflet::addLegend(
+      #pal = pal, values = ~PM2.5,
+      #opacity = 0.7, title = "PM2.5"
+    #)
+})
 
 ```
