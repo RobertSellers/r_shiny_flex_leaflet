@@ -1,0 +1,90 @@
+---
+title: "Leaflet Choropleth + Flexdashboard + DT"
+author: "Robert Sellers"
+output:
+  flexdashboard::flex_dashboard:
+    theme: paper
+    favicon: img/ios7-location-outline.png
+    source_code: embed
+---
+
+```{r setup, include=FALSE}
+# prep workspace
+#pop <- read.csv("data/pop.csv")
+library(dplyr)  # tidy data manipulation
+library(leaflet)  # interative mapping
+library(DT)  # interactive tables
+library(sf) # Geospatial processing library
+library(spData) # Geospatial datasets
+data(us_states)
+```
+
+Column {data-width=400}
+-------------------------------------
+
+### About
+
+#### Interactive map
+
+You can:
+
+* tbd
+
+#### Datatable
+
+You can:
+
+* tbd
+
+#### Blurb
+
+Summary tbd.
+
+> bla bla bla
+>
+> bla bla bla
+>
+> bla bla bla
+
+Disclaimer / license tbd.
+
+#### Tools
+
+[R v3.4.4](https://www.r-project.org/) and [RStudio v1.1.442](https://www.rstudio.com/) were used to build this tool.
+
+The packages used were:
+
+* [Flexdashboard](https://rmarkdown.rstudio.com/flexdashboard/) to create a frame for the content
+* [Leaflet](https://rstudio.github.io/leaflet/) for the interactive map
+* [DT](https://rstudio.github.io/DT/) for the interactive table
+
+
+### Variable Selection
+    
+```{r}
+DT::datatable(
+  us_states,
+  filter = "top",
+  extensions = "Scroller",
+  rownames = FALSE,
+  style = "bootstrap",
+  class = "compact",
+  width = "100%",
+  options = list(deferRender = TRUE, scrollY = 300, scroller = TRUE))
+```
+
+
+Column {data-width=600}
+-------------------------------------
+    
+### Choropleth map
+    
+```{r map}
+
+us_states %>% 
+  leaflet() %>% 
+  addTiles()  %>% 
+  setView( lat=10, lng=0 , zoom=2) %>%
+  addPolygons( )
+
+```
