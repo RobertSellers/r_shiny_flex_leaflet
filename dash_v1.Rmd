@@ -6,8 +6,7 @@ output:
     theme: paper
     favicon: img/ios7-location-outline.png
 runtime: shiny
-editor_options: 
-  chunk_output_type: console
+
 ---
 
 ```{r setup, include=FALSE}
@@ -16,6 +15,8 @@ library(leaflet)  # interative mapping
 library(DT)  # interactive tables
 library(sf) # Geospatial processing library
 library(spData) # Geospatial datasets
+library(ggplot2) # pie chart
+library(leafpop) # svg popups
 
 # suppress scientific notation just in case
 options(scipen=999)
@@ -23,12 +24,18 @@ options(scipen=999)
 # resolve promise
 data("us_states")
 
-# suppress warning / reproject states polygon to WGS84
-us_states <- st_transform(us_states, crs = 4326)
+# load .csv
+# df_from_csv <- read.csv("C:/repositories/r_shiny_flex_leaflet/Police_Budget_summarized.csv")
+df_from_csv <- read.csv("Police_Budget_summarized.csv")
+df_from_csv <- read.csv("C:/repositories/r_shiny_flex_leaflet/Police_Budget_summarized.csv")
 
-# convert to financial data
-us_states <- us_states %>%
-  mutate(budget_10 = total_pop_10, budget_15 = total_pop_15)
+us_states <- st_transform(us_states, crs = 4326) %>% #reproject states polygon to WGS84
+  left_join(df_from_csv, by = c("NAME" = "State")) %>% # join state data to csv
+  select(-c(GEOID,AREA,X,REGION, total_pop_10,total_pop_15)) # remove superfluous
+
+# Select numeric type columns for dropdown selection
+nums <- unlist(lapply(us_states, is.numeric), use.names = FALSE)
+cols_for_map <- subset(colnames(us_states[ , nums]),colnames(us_states[ , nums]) != 'geometry')
 ```
 
 ```{r reactives}
@@ -36,16 +43,49 @@ us_states <- us_states %>%
 mapFiltered  <- reactive({
   us_states[c("NAME",input$category)]
 })
+
+decision <- reactive({
+  mapFiltered()[[input$category]]
+})
+
+#select the input
+pal <- reactive({
+    colorQuantile("YlGn", mapFiltered()$decision, n = 5)
+})
+
+  pal<-  colorQuantile(
+    palette = "RdBu", 
+    domain = NULL,
+    na.color = "#808080"
+    )
 ```
 
+```{r plots}
+makePopupPlot <- function (state) {
+  data <- data.frame(
+    group=LETTERS[1:5],
+    value=c(13,7,9,21,2)
+  )
+  
+  # Basic piechart
+  popupPlot <- ggplot(data, aes(x="", y=value, fill=group)) +
+    geom_bar(stat="identity", width=1) +
+    coord_polar("y", start=0)
+  
+  return (popupPlot)
+}
+p_all <- lapply(us_states$NAME, makePopupPlot)
+```
 
 Column 
 -------------------------------------
     
-### Choropleth map
+### United States Choropleth Map of Police Budgets
     
 ```{r map}
 renderLeaflet({
+  req(mapFiltered())
+  
   
   # constrain map to us_states polygon layer
   bounds <- us_states %>% 
@@ -55,7 +95,8 @@ renderLeaflet({
   # define color gradient function
   # Using hardcoded bins on all values 
   bins <- c(0, 500000, 1000000, 2500000,5000000,10000000,15000000,20000000,Inf)
-  pal<-  colorBin("YlOrRd", domain = mapFiltered()[[input$category]], bins = bins)
+    pal <- colorBin(palette = 'YlGn', domain = NULL, bins=quantile(us_states[[input$category]], na.rm = TRUE), 
+                    na.color = "#808080",  alpha = FALSE, reverse = F)
   
   if (nrow(mapFiltered()) == 0) {
     return(NULL)
@@ -69,12 +110,14 @@ renderLeaflet({
   lapply(htmltools::HTML)
   
   leaflet(mapFiltered()) %>%
+          clearControls() %>%
+      clearShapes()%>%
     addProviderTiles("CartoDB.Positron") %>% 
     addPolygons(
-      fillColor = ~ pal(mapFiltered()[[input$category]]),
+      fillColor = ~ pal(decision()),
       stroke = FALSE,
       fillOpacity = 0.6,
-      
+      group = 'states',
       label = leaflet_tooltip,
       labelOptions = labelOptions( 
         style = list("font-weight" = "normal", padding = "3px 8px"), 
@@ -86,19 +129,20 @@ renderLeaflet({
     ) %>%
     addLegend(
       pal = pal, 
-      values = ~mapFiltered()[[input$category]],
+      values = ~decision(),
       opacity = 0.7, 
       title = input$category,
       labFormat = labelFormat(prefix = "$"),
         position = "bottomright"
     ) %>%
-  fitBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+  fitBounds(bounds[1], bounds[2], bounds[3], bounds[4])  %>%
+      addPopupGraphs(p_all, group = 'states')
 })
 absolutePanel(
         draggable = TRUE, top = "1%", left = "auto", right = "1%", bottom = "auto",
         width = '30%', height = 'auto',
-        p(strong("Available Choropleth analyses")),
-        selectInput("category", label = "User Selection:", choices = c('budget_10','budget_15'), selected = "budget_10")
+        p(strong("Available analyses")),
+        selectInput("category", label = "User Selection:", choices = cols_for_map, selected = cols_for_map[1])
     )
 
 ```
