@@ -48,20 +48,17 @@ decision <- reactive({
   mapFiltered()[[input$category]]
 })
 
-#select the input
-pal <- reactive({
-    colorQuantile("YlGn", mapFiltered()$decision, n = 5)
+cat_reactive <- reactive({
+  input$category
 })
 
-  pal<-  colorQuantile(
-    palette = "RdBu", 
-    domain = NULL,
-    na.color = "#808080"
-    )
+popup_graph <- reactive({
+   lapply(us_states$NAME, makePopupPlot)
+})
 ```
 
 ```{r plots}
-makePopupPlot <- function (state) {
+makePopupPlot <- function (new_data) {
   data <- data.frame(
     group=LETTERS[1:5],
     value=c(13,7,9,21,2)
@@ -74,7 +71,12 @@ makePopupPlot <- function (state) {
   
   return (popupPlot)
 }
-p_all <- lapply(us_states$NAME, makePopupPlot)
+
+randGroup <- function(n = 5000) {
+  a <- do.call(paste0, replicate(5, sample(LETTERS, n, TRUE), FALSE))
+  paste0(a, sprintf("%04d", sample(9999, n, TRUE)), sample(LETTERS, n, TRUE))
+}
+
 ```
 
 Column 
@@ -86,7 +88,8 @@ Column
 renderLeaflet({
   req(mapFiltered())
   
-  
+  # hack to generate new paired group so popup continues to appear
+  newGroupId = randGroup(1)
   # constrain map to us_states polygon layer
   bounds <- us_states %>% 
     st_bbox() %>% 
@@ -94,10 +97,10 @@ renderLeaflet({
   
   # define color gradient function
   # Using hardcoded bins on all values 
-  bins <- c(0, 500000, 1000000, 2500000,5000000,10000000,15000000,20000000,Inf)
     pal <- colorBin(palette = 'YlGn', domain = NULL, bins=quantile(us_states[[input$category]], na.rm = TRUE), 
                     na.color = "#808080",  alpha = FALSE, reverse = F)
   
+  # sanity test
   if (nrow(mapFiltered()) == 0) {
     return(NULL)
   }
@@ -109,15 +112,17 @@ renderLeaflet({
 ) %>%
   lapply(htmltools::HTML)
   
-  leaflet(mapFiltered()) %>%
-          clearControls() %>%
-      clearShapes()%>%
+  leaflet(data = mapFiltered(),
+    options = leafletOptions(zoomControl = FALSE)) %>%
+    clearControls() %>%
+    clearShapes()%>%
+    clearPopups() %>%
     addProviderTiles("CartoDB.Positron") %>% 
     addPolygons(
       fillColor = ~ pal(decision()),
       stroke = FALSE,
       fillOpacity = 0.6,
-      group = 'states',
+      group = newGroupId,
       label = leaflet_tooltip,
       labelOptions = labelOptions( 
         style = list("font-weight" = "normal", padding = "3px 8px"), 
@@ -136,7 +141,7 @@ renderLeaflet({
         position = "bottomright"
     ) %>%
   fitBounds(bounds[1], bounds[2], bounds[3], bounds[4])  %>%
-      addPopupGraphs(p_all, group = 'states')
+  addPopupGraphs(popup_graph(), group = newGroupId)
 })
 absolutePanel(
         draggable = TRUE, top = "1%", left = "auto", right = "1%", bottom = "auto",
