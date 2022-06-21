@@ -27,17 +27,17 @@ library(ggplot2) # pie chart
 library(leafpop) # svg popups
 
 
-# load custom styles
-tags$head(
-  tags$link(rel = "stylesheet", type = "text/css", href = "dark_mode.css")
-)
+# load custom styles...tbd
+# tags$head(
+#   tags$link(rel = "stylesheet", type = "text/css", href = "style.css")
+# )
 
 
 # suppress scientific notation just in case
 options(scipen=999)
 
 # load .csv locally
-df_from_csv <- read.csv("C:/repositories/r_shiny_flex_leaflet/Police_Budget_summarized.csv")
+# df_from_csv <- read.csv("C:/repositories/r_shiny_flex_leaflet/Police_Budget_summarized.csv")
 df_from_csv <- read.csv("Police_Budget_summarized.csv")
 
 # Load states sf spatial data
@@ -58,6 +58,7 @@ names(cols_for_map) <- c("Police Budget", "Total Budget", "Percent Police")
 mapFiltered  <- reactive({
   us_states[c("NAME",input$category)]
 })
+
 ```
 
 
@@ -74,6 +75,8 @@ humanText <- function(x){
   x <- stringr::str_to_title(x)
   return(x)
 }
+
+
 ```
 
 Column 
@@ -87,6 +90,9 @@ renderLeaflet({
   # for sanity
   req(mapFiltered())
   
+  # update labels either dollar amount or percentage amount
+  labelLegend <- ifelse(input$category %in% c('Total_Budget', 'Police_Budget'),labelFormat(prefix = "$"),labelFormat(suffix = "%"))
+  
   # hack to generate new paired group so popup continues to appear
   newGroupId = randGroup(1)
 
@@ -99,6 +105,7 @@ renderLeaflet({
   colfunc <- colorRampPalette(c("orange", "blue"))
   pal <- colorBin(palette = colfunc(5), domain = NULL, bins=quantile(us_states[[input$category]], na.rm = TRUE), 
                   na.color = "#808080",  alpha = FALSE, reverse = F)
+
   
   # sanity test
   if (nrow(mapFiltered()) == 0) {
@@ -138,29 +145,38 @@ renderLeaflet({
     values = ~ mapFiltered()[[input$category]],
     opacity = 0.7, 
     title = humanText(input$category),
-    #labFormat = labelFormat(prefix = "$"),
+    labFormat = labelLegend,
     position = "bottomleft"
   ) %>%
   fitBounds(bounds[1], bounds[2], bounds[3], bounds[4])  %>%
+    
+  # popup area
   addPopupGraphs( # POPUP pie chart control
     lapply(us_states$NAME, 
       function(i) {
 
         data <- data.frame(
         group=LETTERS[1:2],
-        value=c(us_states[us_states$NAME == i, ]$Percent_Police,(100 - us_states[us_states$NAME == i, ]$Percent_Police))
+        value=c(
+          round((100 - us_states[us_states$NAME == i, ]$Percent_Police),1),
+          round(us_states[us_states$NAME == i, ]$Percent_Police,1)
+          
+          )
       )
-        
         
       # Pie Chart Code
       # consider minicharts? https://cran.r-project.org/web/packages/leaflet.minicharts/vignettes/introduction.html
+      rounded <- paste0(round(as.numeric(us_states[us_states$NAME == i, ]$Percent_Police),1),"%")
+      labels <- c("",rounded)
       popupPlot <- ggplot(data, aes(x="", y=value, fill=group)) +
-        geom_bar(stat="identity", width=1) +
-        coord_polar("y", start=90) +
-        geom_text(aes(
-          label = round(us_states[us_states$NAME == i, ]$Percent_Police),1),
-                  position = position_stack(vjust = 0.5)) +
-         scale_fill_manual(values=c("#F15F3A", "#D3D3D3")) +
+        geom_bar(stat="identity", width = 1, color = "white") +
+        coord_polar("y", start = 45) +
+        geom_text(position = position_stack(vjust = 0.5),
+                  aes(
+          label = labels
+        ), 
+        color = "white") +
+        scale_fill_manual(values=c("#D3D3D3","#F15F3A")) +
         ggtitle("Annual spending per latest available \napproved budget (source)") + 
         theme(legend.position = "none",
         axis.text = element_blank(),
@@ -176,14 +192,15 @@ renderLeaflet({
   # separately controlled from leaflet pipeline
   # controls the variable dropdown html
 absolutePanel(
-        draggable = FALSE, top = "auto", left = "auto", right = "1%", bottom = "10%",
-        width = '30%', height = 'auto',
+        draggable = FALSE, left = "1%", bottom = "18%",
         selectInput(
           "category", 
           label = "User Selection:", 
           choices = cols_for_map, 
           selected = cols_for_map[1]
-        )
+        ),
+        width = 245,
+        style = "border-radius: 5px;padding: 6px; background: rgba(255,255,255,0.8); box-shadow: 0 0 15px rgba(0,0,0,0.2)"
     )
 
 ```
