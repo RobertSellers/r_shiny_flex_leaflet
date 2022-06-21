@@ -1,18 +1,26 @@
 ---
-title: "U.S. Police Budget Analysis"
-author: "Robert Sellers / Gloria DeSanker"
+title: "Police Budget Map by U.S. State"
 output:
   flexdashboard::flex_dashboard:
-    theme: paper
+    theme: spacelab
+    source_code: embed
     favicon: img/ios7-location-outline.png
 runtime: shiny
 
 ---
 
-```{r setup, include=FALSE}
+
+```{r setup, include = FALSE}
+
+## available auto themes
+#  ("default", "bootstrap", "cerulean", "journal", "flatly", "readable",
+# "spacelab", "united", "cosmo", "lumen", "paper", "sandstone", "simplex", or
+# "yeti")
+
+
+# Libraries
 library(dplyr)  # tidy data manipulation
 library(leaflet)  # interative mapping
-library(DT)  # interactive tables
 library(sf) # Geospatial processing library
 library(spData) # Geospatial datasets
 library(ggplot2) # pie chart
@@ -21,57 +29,31 @@ library(leafpop) # svg popups
 # suppress scientific notation just in case
 options(scipen=999)
 
-# resolve promise
-data("us_states")
-
-# load .csv
-# df_from_csv <- read.csv("C:/repositories/r_shiny_flex_leaflet/Police_Budget_summarized.csv")
-df_from_csv <- read.csv("Police_Budget_summarized.csv")
+# load .csv locally
 df_from_csv <- read.csv("C:/repositories/r_shiny_flex_leaflet/Police_Budget_summarized.csv")
+df_from_csv <- read.csv("Police_Budget_summarized.csv")
 
+# Load states sf spatial data
 us_states <- st_transform(us_states, crs = 4326) %>% #reproject states polygon to WGS84
   left_join(df_from_csv, by = c("NAME" = "State")) %>% # join state data to csv
   select(-c(GEOID,AREA,X,REGION, total_pop_10,total_pop_15)) # remove superfluous
 
 # Select numeric type columns for dropdown selection
-nums <- unlist(lapply(us_states, is.numeric), use.names = FALSE)
-cols_for_map <- subset(colnames(us_states[ , nums]),colnames(us_states[ , nums]) != 'geometry')
+cols_for_map <- subset(
+  colnames(us_states[ , unlist(lapply(us_states, is.numeric), use.names = FALSE)]),
+  colnames(us_states[ , unlist(lapply(us_states, is.numeric), use.names = FALSE)]) != 'geometry')
 ```
 
 ```{r reactives}
 # filter master dataframe columns by user variable select / radio select
+# this triggers the entire mapping panel to reload
 mapFiltered  <- reactive({
   us_states[c("NAME",input$category)]
-})
-
-decision <- reactive({
-  mapFiltered()[[input$category]]
-})
-
-cat_reactive <- reactive({
-  input$category
-})
-
-popup_graph <- reactive({
-   lapply(us_states$NAME, makePopupPlot)
 })
 ```
 
 ```{r plots}
-makePopupPlot <- function (new_data) {
-  data <- data.frame(
-    group=LETTERS[1:5],
-    value=c(13,7,9,21,2)
-  )
-  
-  # Basic piechart
-  popupPlot <- ggplot(data, aes(x="", y=value, fill=group)) +
-    geom_bar(stat="identity", width=1) +
-    coord_polar("y", start=0)
-  
-  return (popupPlot)
-}
-
+# function to coerce leaflet to render same group multiple times
 randGroup <- function(n = 5000) {
   a <- do.call(paste0, replicate(5, sample(LETTERS, n, TRUE), FALSE))
   paste0(a, sprintf("%04d", sample(9999, n, TRUE)), sample(LETTERS, n, TRUE))
@@ -82,36 +64,41 @@ randGroup <- function(n = 5000) {
 Column 
 -------------------------------------
     
-### United States Choropleth Map of Police Budgets
+### United States Police Budgets
     
 ```{r map}
 renderLeaflet({
+
+  # for sanity
   req(mapFiltered())
   
   # hack to generate new paired group so popup continues to appear
   newGroupId = randGroup(1)
+
   # constrain map to us_states polygon layer
   bounds <- us_states %>% 
     st_bbox() %>% 
     as.character()
-  
+
   # define color gradient function
-  # Using hardcoded bins on all values 
-    pal <- colorBin(palette = 'YlGn', domain = NULL, bins=quantile(us_states[[input$category]], na.rm = TRUE), 
-                    na.color = "#808080",  alpha = FALSE, reverse = F)
+  colfunc <- colorRampPalette(c("orange", "blue"))
+  pal <- colorBin(palette = colfunc(5), domain = NULL, bins=quantile(us_states[[input$category]], na.rm = TRUE), 
+                  na.color = "#808080",  alpha = FALSE, reverse = F)
   
   # sanity test
   if (nrow(mapFiltered()) == 0) {
     return(NULL)
   }
 
-  # Prepare the text for tooltips:
+  # Prepare the text for tooltips
   leaflet_tooltip <- sprintf(
-  "<strong>%s</strong><br/>$%g",
+  "<strong>%s</strong><br/>$%g", 
   us_states$NAME, us_states[[input$category]]
-) %>%
+  ) %>%
   lapply(htmltools::HTML)
   
+  # primary leaflet function
+  # Loads based on a reactive mapFiltered object
   leaflet(data = mapFiltered(),
     options = leafletOptions(zoomControl = FALSE)) %>%
     clearControls() %>%
@@ -119,7 +106,7 @@ renderLeaflet({
     clearPopups() %>%
     addProviderTiles("CartoDB.Positron") %>% 
     addPolygons(
-      fillColor = ~ pal(decision()),
+      fillColor = ~ pal(mapFiltered()[[input$category]]),
       stroke = FALSE,
       fillOpacity = 0.6,
       group = newGroupId,
@@ -129,25 +116,46 @@ renderLeaflet({
         textsize = "13px", 
         direction = "auto"
       ),
-      
-
     ) %>%
-    addLegend(
-      pal = pal, 
-      values = ~decision(),
-      opacity = 0.7, 
-      title = input$category,
-      labFormat = labelFormat(prefix = "$"),
-        position = "bottomright"
-    ) %>%
+  addLegend(
+    pal = pal, 
+    values = ~ mapFiltered()[[input$category]],
+    opacity = 0.7, 
+    title = input$category,
+    labFormat = labelFormat(prefix = "$"),
+      position = "bottomright"
+  ) %>%
   fitBounds(bounds[1], bounds[2], bounds[3], bounds[4])  %>%
-  addPopupGraphs(popup_graph(), group = newGroupId)
-})
+  addPopupGraphs( # POPUP pie chart control
+    lapply(us_states$NAME, 
+      function(i) {
+
+        data <- data.frame(
+        group=LETTERS[1:2],
+        value=c(us_states[us_states$NAME == i, ]$Percent_Police,(100-us_states[us_states$NAME == i, ]$Percent_Police))
+      )
+      # Basic piechart
+      popupPlot <- ggplot(data, aes(x="", y=value, fill=group)) +
+        geom_bar(stat="identity", width=1) +
+        coord_polar("y", start=90) +
+        ggtitle(i) + theme(legend.position = "none",
+                            axis.ticks.x=element_blank())
+    return (popupPlot)
+    }), group = newGroupId)
+  })
+
+  # separately controlled from leaflet pipeline
+  # controls the variable dropdown html
 absolutePanel(
         draggable = TRUE, top = "1%", left = "auto", right = "1%", bottom = "auto",
         width = '30%', height = 'auto',
         p(strong("Available analyses")),
-        selectInput("category", label = "User Selection:", choices = cols_for_map, selected = cols_for_map[1])
+        selectInput(
+          "category", 
+          label = "User Selection:", 
+          choices = cols_for_map, 
+          selected = cols_for_map[1]
+        )
     )
 
 ```
