@@ -26,6 +26,13 @@ library(spData) # Geospatial datasets
 library(ggplot2) # pie chart
 library(leafpop) # svg popups
 
+
+# load custom styles
+tags$head(
+  tags$link(rel = "stylesheet", type = "text/css", href = "dark_mode.css")
+)
+
+
 # suppress scientific notation just in case
 options(scipen=999)
 
@@ -42,6 +49,7 @@ us_states <- st_transform(us_states, crs = 4326) %>% #reproject states polygon t
 cols_for_map <- subset(
   colnames(us_states[ , unlist(lapply(us_states, is.numeric), use.names = FALSE)]),
   colnames(us_states[ , unlist(lapply(us_states, is.numeric), use.names = FALSE)]) != 'geometry')
+names(cols_for_map) <- c("Police Budget", "Total Budget", "Percent Police")
 ```
 
 ```{r reactives}
@@ -52,6 +60,7 @@ mapFiltered  <- reactive({
 })
 ```
 
+
 ```{r plots}
 # function to coerce leaflet to render same group multiple times
 randGroup <- function(n = 5000) {
@@ -59,12 +68,18 @@ randGroup <- function(n = 5000) {
   paste0(a, sprintf("%04d", sample(9999, n, TRUE)), sample(LETTERS, n, TRUE))
 }
 
+
+humanText <- function(x){
+  x <- sub("_", " ", x)
+  x <- stringr::str_to_title(x)
+  return(x)
+}
 ```
 
 Column 
 -------------------------------------
     
-### United States Police Budgets
+### State Police Budget Allocation Comparative Map
     
 ```{r map}
 renderLeaflet({
@@ -91,9 +106,10 @@ renderLeaflet({
   }
 
   # Prepare the text for tooltips
-  leaflet_tooltip <- sprintf(
-  "<strong>%s</strong><br/>$%g", 
-  us_states$NAME, us_states[[input$category]]
+  leaflet_tooltip <- paste0(
+    "<div style='color:#546474'><strong>",us_states$NAME,"</strong><br/>",
+    "<strong>Total Budget: </strong>",scales::dollar(us_states$Total_Budget),"<br/>",
+    "<strong>Police Budget: </strong>",scales::dollar(us_states$Police_Budget),"<br/></div>"
   ) %>%
   lapply(htmltools::HTML)
   
@@ -104,7 +120,7 @@ renderLeaflet({
     clearControls() %>%
     clearShapes()%>%
     clearPopups() %>%
-    addProviderTiles("CartoDB.Positron") %>% 
+    addProviderTiles("Esri.WorldShadedRelief") %>% 
     addPolygons(
       fillColor = ~ pal(mapFiltered()[[input$category]]),
       stroke = FALSE,
@@ -121,9 +137,9 @@ renderLeaflet({
     pal = pal, 
     values = ~ mapFiltered()[[input$category]],
     opacity = 0.7, 
-    title = input$category,
-    labFormat = labelFormat(prefix = "$"),
-      position = "bottomright"
+    title = humanText(input$category),
+    #labFormat = labelFormat(prefix = "$"),
+    position = "bottomleft"
   ) %>%
   fitBounds(bounds[1], bounds[2], bounds[3], bounds[4])  %>%
   addPopupGraphs( # POPUP pie chart control
@@ -132,14 +148,27 @@ renderLeaflet({
 
         data <- data.frame(
         group=LETTERS[1:2],
-        value=c(us_states[us_states$NAME == i, ]$Percent_Police,(100-us_states[us_states$NAME == i, ]$Percent_Police))
+        value=c(us_states[us_states$NAME == i, ]$Percent_Police,(100 - us_states[us_states$NAME == i, ]$Percent_Police))
       )
-      # Basic piechart
+        
+        
+      # Pie Chart Code
+      # consider minicharts? https://cran.r-project.org/web/packages/leaflet.minicharts/vignettes/introduction.html
       popupPlot <- ggplot(data, aes(x="", y=value, fill=group)) +
         geom_bar(stat="identity", width=1) +
         coord_polar("y", start=90) +
-        ggtitle(i) + theme(legend.position = "none",
-                            axis.ticks.x=element_blank())
+        geom_text(aes(
+          label = round(us_states[us_states$NAME == i, ]$Percent_Police),1),
+                  position = position_stack(vjust = 0.5)) +
+         scale_fill_manual(values=c("#F15F3A", "#D3D3D3")) +
+        ggtitle("Annual spending per latest available \napproved budget (source)") + 
+        theme(legend.position = "none",
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        panel.grid  = element_blank())
+      
+      
     return (popupPlot)
     }), group = newGroupId)
   })
@@ -147,9 +176,8 @@ renderLeaflet({
   # separately controlled from leaflet pipeline
   # controls the variable dropdown html
 absolutePanel(
-        draggable = TRUE, top = "1%", left = "auto", right = "1%", bottom = "auto",
+        draggable = FALSE, top = "auto", left = "auto", right = "1%", bottom = "10%",
         width = '30%', height = 'auto',
-        p(strong("Available analyses")),
         selectInput(
           "category", 
           label = "User Selection:", 
